@@ -18,11 +18,13 @@ from huggingface_hub import snapshot_download
 Loss = Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
 
 # %% ../../src/pipeline/pipeline.ipynb #6e686a8e-7175-4a27-a9e3-2587fe98e936
+# Every so many epochs, save a checkpoint of the pipeline to disk. The checkpoint includes the model weights, optimizer state, and training configuration, 
+# allowing to resume training from that point if needed.
 class CheckpointCB(Callback):
     def __init__(self, ck_interval=None, ck_path=None): 
         super().__init__()
-        self.ck_interval = ck_interval
-        self.ck_path     = ck_path
+        self.ck_interval = ck_interval # how often to save checkpoints (in epochs)
+        self.ck_path     = ck_path # where to save checkpoints (directory path)
     
     def after_epoch(self, pipeline): 
         if exists(self.ck_interval) and exists(self.ck_path):
@@ -31,6 +33,8 @@ class CheckpointCB(Callback):
                 pipeline.store_pipeline(config_path=store_dir, save_path=store_dir)  
 
 # %% ../../src/pipeline/pipeline.ipynb #1a99133e-b16a-4627-8565-f15d6f6cfb5d
+# Abstract base class for saving and loading pipeline configurations. Provides methods to get the configuration of the pipeline, 
+# store the pipeline to disk, and load a pipeline from a configuration file.
 class PipelineIO(abc.ABC):   
     """A class providing basic IO functionality."""
     
@@ -87,7 +91,7 @@ class Pipeline(PipelineIO):
     def __init__(self, 
                  model: nn.Module,
                  device: torch.device):
-        self.model  = model.to(device)
+        self.model  = model.to(device) 
         self.device = device
 
         self.trainables = []
@@ -106,6 +110,16 @@ class Pipeline(PipelineIO):
     def _get_parameters(self):
         parameters = itertools.chain(*[trainable.parameters() for trainable in self.trainables]) 
         return parameters
+    
+    # Setup step before training. Prepares pipeline with:
+    # - loss function (loss_fn): the loss function to optimize during training, e.g. mean squared error for diffusion models.
+    # - optimizer function (optim_fn): the optimization algorithm to use for updating model weights, e.g. Adam or SGD.
+    # - metrics: a dictionary of metric objects to track during training, e.g. mean loss, accuracy, etc.
+    # - learning rate (lr): the learning rate for the optimizer, which controls the step size during weight updates.
+    # - callbacks (cbs): a list of callback objects to run at specific points during training, e.g. for logging, checkpointing, etc.
+    # - compile_model: whether to compile the model with torch.compile() for potential speedup (only on Linux). 
+    # Compilation can optimize the model for faster inference and training, but may require additional setup and may not always lead to 
+    # speed improvements depending on the model and hardware. 
     
     def compile(self, optim_fn: type(torch.optim.Optimizer), loss_fn: Loss, metrics: Union[Metric, list[Metric]]=None, lr=None, cbs=None, compile_model=False, **kwargs):       
         self.loss_fn    = loss_fn()
@@ -144,9 +158,11 @@ class Pipeline(PipelineIO):
          
     #------------------------------------
 
+    # train on one batch of data. Calls `train_step` to compute the loss, then performs backpropagation and optimizer step if in training mode. Returns the loss for the batch.
     def train_on_batch(self, data, train=True):
-        loss = self.train_step(data, train=train)   
+        loss = self.train_step(data, train=train)   # train_step for example implemented in subclass `CompilationDiffusionPipeline` as the forward and backward pass for one batch of data, including the diffusion process and loss computation.
           
+        # standard pytorch training step: zero gradients, backpropagate loss, and update weights with optimizer step. Only performed if `train=True`, allowing to use the same method for both training and validation (where no weight updates are done).
         if train:            
             #zero grads
             self.optimizer.zero_grad()
@@ -159,8 +175,10 @@ class Pipeline(PipelineIO):
             #update weights
             self.optimizer.step()
     
-        return loss.detach()
+        return loss.detach() # return the loss for the batch, detached from the computation graph to avoid memory issues.
     
+    # iterate over all batches, call train_on_batch for each batch, and track metrics. If `train=True`, also performs optimizer steps and learning rate scheduling.
+    # Metrics are updated after each batch, and can be logged or printed using callbacks. This method is called for both training and validation epochs, with `train=False` for validation to avoid weight updates.
     def train_on_epoch(self, data_loader: DataLoader, train=True):   
         # self.model.train(train)
         for model in self.trainables:
@@ -183,11 +201,14 @@ class Pipeline(PipelineIO):
                 self.end_batch_metrics(batch_prgb, **self.out_metric_dict)   
                 # run_cbs(self.cbs, "after_batch", self) # e.g. if max-number of batches is needed
                 
+    
+    # fit is top-level training loop -> trains for multiple epochs.
+
     #run on train and one on valid
     def fit(self, num_epochs: int, data_loaders: DataLoaders, lr: float=None, lr_sched=None, log_summary=True):
-        if not hasattr(self, "loss_fn"): raise RuntimeError("'compile' has to be called first")       
+        if not hasattr(self, "loss_fn"): raise RuntimeError("'compile' has to be called first")       # Makes sure compile is called.
        
-        self._set_opt_param(lr=lr)  
+        self._set_opt_param(lr=lr)  # set optimizer/learning rate
         if not hasattr(self, "lr_sched"):
             if lr_sched: self.lr_sched = lr_sched(self.optimizer)
             else: self.lr_sched = None
@@ -227,7 +248,7 @@ class Pipeline(PipelineIO):
         run_cbs(self.cbs, "after_fit", self)
                 
     #------------------------------------
-                       
+    # builds and returns text summary string                   
     def summary(self): 
 
         cnt_params = lambda parameters: sum([p.numel() for p in parameters])
@@ -241,6 +262,7 @@ class Pipeline(PipelineIO):
             s += "\n" + f" - {name}:     Total={cnt_params(all_params):0.2e}     Trainable={cnt_params(trainable_params):0.2e}"
         return s
 
+    # builds and shows a plot of the training and validation losses over time. 
     def fit_summary(self, figsize=(12,2), log_summary=True, return_fig=False):
         fig = plt.figure(figsize=figsize, constrained_layout=True, dpi=150)                
         plt.xlabel("Number of batches / update steps")
@@ -256,7 +278,8 @@ class Pipeline(PipelineIO):
         plt.show()
              
     #------------------------------------
-        
+    
+    # creates a progress bar for iterating over epochs or batches, using tqdm. 
     def progress_bar(self, iterable=None, total=None, epoch: int=None, **progress_bar_config): 
         if not hasattr(self, "_progress_bar_config"):
             self._progress_bar_config = {}
@@ -274,6 +297,7 @@ class Pipeline(PipelineIO):
             return tqdm(total=total, **self._progress_bar_config)
         else: raise ValueError("Either `total` or `iterable` has to be defined.")
         
+    # helper function to update the progress bar after each batch or epoch, and optionally print metrics. 
     def end_progress_bar_iteration(self, prgb:tqdm, print_lines=False, name="", index=None, **metrics):
         if metrics is not None: prgb.set_postfix(**metrics)        
         prgb.update()

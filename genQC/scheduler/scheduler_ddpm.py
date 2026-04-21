@@ -17,6 +17,9 @@ class DDPMSchedulerOutput:
     pred_original_sample: Optional[torch.FloatTensor] = None
 
 # %% ../../src/scheduler/scheduler_ddpm.ipynb #de0475b1-e0aa-42eb-9f56-12c131ef868f
+# Scheduler for genQC1 unitary compilation
+
+
 class DDPMScheduler(Scheduler):
     """A `Scheduler` implementing [(DDPM)](https://arxiv.org/abs/2006.11239)"""
     

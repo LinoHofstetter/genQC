@@ -10,28 +10,47 @@ from ..imports import *
 from .diffusion_pipeline import DiffusionPipeline
 
 # %% ../../src/pipeline/compilation_diffusion_pipeline.ipynb #5307df45-9b01-4d0b-98ee-97bf23609001
+# Pipeline for genQC1 unitary compilation. Extends DiffusionPipeline class by adding a `Unitary_encoder` and 
+# concatenating its output to the text embedding before feeding it to the U-Net.
+# Inherits init and train_step from DiffusionPipeline, but overrides the denoising process to account for the unitary conditions.
 class DiffusionPipeline_Compilation(DiffusionPipeline):   
     """A special `DiffusionPipeline` that accounts for unitary conditions, i.e. compilation."""
     
     #------------------------------------
     
-    @torch.no_grad()
+
+    # __call__ makes an object callable, i.e. allows to call the object as a function. 
+    @torch.no_grad() # tells PyTorch not to track gradients for operations inside this function
     def __call__(self, latents, c, U, g, negative_c=None, negative_u=None, no_bar=False):
         
-        latents = latents.to(self.device)
+        # latents: starting noise, c: text conditions, U: unitary conditions, g: guidance scale, 
+        # negative_c: negative text conditions for classifier-free guidance, 
+        # negative_u: negative unitary conditions for classifier-free guidance, no_bar: whether to show progress bar during denoising.
+        
+        # .device defines the device on which the model is located (e.g. 'cuda' or 'cpu'), and we need to move the inputs to the same device 
+        # before feeding them to the model.
+        latents = latents.to(self.device) 
         c       = c.to(self.device)
         U       = U.to(self.device)
         
+        # calls the denoising function defined in DiffusionPipeline, but with the additional unitary conditions U and negative_u for classifier-free guidance.
         return self.denoising(latents, c=c, U=U, negative_c=negative_c, negative_u=negative_u, enable_guidance=True, g=g, no_bar=no_bar)
 
     #------------------------------------
 
+    # given a real unitary condition U, returns a zero tensor of the same shape. This is used for classifier-free guidance, 
+    # where we need to feed the model with "empty" conditions (i.e. zero tensors) for the negative samples.
     def empty_unitary_fn(self, U):
         # U ... [b , 2, n, n]
      
         u = torch.zeros_like(U)
         return u
     
+    # given the unitary conditions U and a flag enable_guidance, returns the unitary conditions to be fed to the model. 
+    # If enable_guidance is True, it concatenates the negative unitary conditions (or empty unitary conditions if negative_u is not provided) to the real unitary conditions U, 
+    # effectively doubling the batch size for the unitary conditions. If enable_guidance is False, 
+    # it simply returns the real unitary conditions U.
+
     def get_guidance_U(self, U: torch.Tensor, enable_guidance: bool = True, negative_u: Optional[torch.Tensor] = None):
         if not exists(U): return U      
         U = U.to(self.device)                
@@ -41,12 +60,20 @@ class DiffusionPipeline_Compilation(DiffusionPipeline):
             U = torch.cat([u, U])            
         return U
     
+    # outer wrapper for denoising step. 
     @torch.no_grad()
     def denoising(self, latents, c, U, negative_c=None, negative_u=None, enable_guidance=True, g=1.0, t_start_index=0, no_bar=False, return_predicted_x0=False):       
         U = self.get_guidance_U(U, enable_guidance, negative_u)  
         return super().denoising(latents, c, negative_c, enable_guidance, g, t_start_index=t_start_index, 
                                  no_bar=no_bar, return_predicted_x0=return_predicted_x0, U=U)
 
+    # latents: current noisy latent tensor x_t
+    # ts: current timestep t
+    # c_emb: text embedding for the conditions c
+    # enable_guidance: whether to apply classifier-free guidance
+    # g: guidance scale for classifier-free guidance
+    # U: unitary conditions to be fed to the model (already processed for guidance if enable_guidance is True)
+    # returns the denoised latents x_{t-1} and the predicted original sample x_0 (before noise was added).
     def denoising_step(self, latents: torch.Tensor, ts: Union[int, torch.IntTensor], c_emb: torch.Tensor=None, enable_guidance=False, g=7.5, U: torch.Tensor=None):    
         if enable_guidance:
             x = torch.cat([latents] * 2)     #uses batch layer combine here
@@ -54,50 +81,59 @@ class DiffusionPipeline_Compilation(DiffusionPipeline):
             if ts.numel() > 1: chunk_ts = torch.cat([ts] * 2)
             else:              chunk_ts = ts
                 
-            eps_u, eps_c = self.model(x, chunk_ts, c_emb, U=U).chunk(2) 
-            
+            # run denoiser model
+            eps_u, eps_c = self.model(x, chunk_ts, c_emb, U=U).chunk(2)  
+            # combine with classifier free guidance formula: eps = eps_uncond + g * (eps_cond - eps_uncond) = (1+g)*eps_uncond - g*eps_cond
             eps = self.CFG(eps_u, eps_c, g)
                     
         else:
+            # denoiser is evaluated only once, directly on current latents.
+            # self..model is an instance of `QC_Compilation_UNet`, so forward() is called. 
             eps = self.model(latents, ts, c_emb, U=U)  
                  
-        x = self.scheduler.step(eps, ts, latents)      
+        x = self.scheduler.step(eps, ts, latents) # performs the actual denoising step, returning the denoised latents x_{t-1}     
         return x.prev_sample, x.pred_original_sample
     
     #------------------------------------
-  
+    
+    # Core function for training on one batch of data. Takes the input data (latents, text conditions, unitary conditions), 
+    # performs the forward diffusion process to add noise to the latents,
     def train_step(self, data, train, **kwargs): 
-        latents, y, U = data                
-        b, s, t = latents.shape          
+        # y: text conditions, U: unitary conditions
+        latents, y, U = data           # latents here aren't gaussian-noisy ddpm latents, it is the circuit tensor from the dataset.     
+        b, s, t = latents.shape          # b: batch size, s: sequence length, t: number of qubits (i.e. tensor dimension)
         
         #start async memcpy
-        latents = latents.to(self.device, non_blocking=self.non_blocking)  
-        latents = self.embedder.embed(latents)  
+        latents = latents.to(self.device, non_blocking=self.non_blocking)  # moves circuit tensor to the same device as the model, with non_blocking=True to allow asynchronous data transfer if possible.
+        latents = self.embedder.embed(latents)  # IMPORTANT: Continuous gate-embedding representation of the discrete circuit encoding -> latents are now cont. embeddings
          
-        #do the cond embedding with CLIP                     
+        #do the cond embedding with CLIP  -> move text & unitary conditions to device.                    
         y = y.to(self.device, non_blocking=self.non_blocking)  
         U = U.to(self.device, non_blocking=self.non_blocking)  
         
+        # optional classifier-free guidance dropout during training. With probability `guidance_train_p`, the text and unitary conditions are replaced 
+        # with empty conditions (e.g. zero tensors) for a random subset of the batch, effectively simulating the classifier-free guidance scenario 
+        # during training and encouraging the model to learn to handle both real and empty conditions.
         if self.enable_guidance_train and train: 
             rnd_y, rnd_U = torch.empty((2*b,), device=self.device).bernoulli_(p=1.0-self.guidance_train_p).type(torch.int64).chunk(2, dim=0)
 
             y = self.cfg_drop(y, self.empty_token_fn(y)  , rnd_y) 
             U = self.cfg_drop(U, self.empty_unitary_fn(U), rnd_U) 
 
-        
+        #turns tokenized prompt y into sequence of clip embeddings (FrozenOpenCLIPEmbedder for genQC1)
         y_emb = self.text_encoder(y, pool=False)
               
-        #sample timesteps
+        #sample random diffusion timesteps
         timesteps = torch.randint(low=0, high=self.scheduler.num_train_timesteps, size=(b,), device=self.device, dtype=torch.int64)
 
-        #forward noising    
+        #forward noising    (forward diffusion step)
         noise = torch.randn(latents.shape, device=self.device)     
         noisy_latents = self.scheduler.add_noise(latents, noise, timesteps, train=train)
 
-        #predict eps
+        #predict eps (denoising step)
         eps = self.model(noisy_latents, timesteps, y_emb, U=U)
             
-        #comp mse
+        #comp mse (compute the denoising loss as the mean squared error between the predicted noise eps and the actual noise added to the latents)
         loss = self.loss_fn(eps, noise)
         
         #log the loss

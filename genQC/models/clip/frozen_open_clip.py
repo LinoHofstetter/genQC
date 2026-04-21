@@ -24,6 +24,7 @@ class FrozenOpenCLIPEmbedderConfig:
     layer: str
 
 # %% ../../../src/models/clip/frozen_open_clip.ipynb #dffe5b29-8362-46fe-9cdc-e83c996ca8b0
+# Text Encoder for genQC1 unitary compilation. Loads and freezes the OpenCLIP transformer encoder for text prompts.
 class FrozenOpenCLIPEmbedder(ConfigModel):
     """Loads and freezes the [OpenCLIP](https://github.com/mlfoundations/open_clip) transformer encoder for text prompts."""
     

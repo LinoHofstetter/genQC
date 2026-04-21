@@ -207,11 +207,13 @@ class QC_Cond_UNet(ConfigModel):
         if attn_mask        is None: attn_mask        = [None] * len(self.enc_chs)
         if key_padding_mask is None: key_padding_mask = [None] * len(self.enc_chs)
               
-        t_emb = self.t_emb(t)
+        t_emb = self.t_emb(t) # time step embedding
                 
-        x = self.conv_in(x)            
-        x = self.pos_enc(x) 
+        x = self.conv_in(x) # project latent channels to model channels
+        x = self.pos_enc(x) # add 2d positional encoding
         
+        # run encoder and decoder of the U-Net. The encoder returns a list of features from each layer, which are fed to the corresponding layers 
+        # of the decoder via skip connections.
         enc_ftrs = self.encoder(x, t_emb=t_emb, c_emb=c_emb, attn_mask=attn_mask, key_padding_mask=key_padding_mask)[::-1]
         out      = self.decoder(x=enc_ftrs[0], encoder_features=enc_ftrs[1:], t_emb=t_emb, c_emb=c_emb, 
                                 attn_mask=attn_mask[::-1][1:], key_padding_mask=key_padding_mask[::-1][1:])
@@ -224,6 +226,7 @@ class QC_Compilation_UNet_config(QC_Cond_UNet_config):
     unitary_encoder_config: Unitary_encoder_config
 
 # %% ../../src/models/unet_qc.ipynb #8313ba1a-bedf-4622-8af9-8ba76b992ae9
+# Denoiser U-Net for genQC1 unitary compilation. Extends `QC_Cond_UNet` by adding a `Unitary_encoder` and concatenating its output to the text embedding before feeding it to the U-Net.
 class QC_Compilation_UNet(QC_Cond_UNet):
     """Extension of the `QC_Cond_UNet` to accept unitary conditions."""
     
@@ -234,11 +237,16 @@ class QC_Compilation_UNet(QC_Cond_UNet):
 
         if is_dataclass(unitary_encoder_config):
             unitary_encoder_config = asdict(unitary_encoder_config)
-        self.unitary_encoder = Unitary_encoder(**unitary_encoder_config)
+        
+        # stores instance of Unitary_encoder class (stores a class object), which is defined in `unitary_encoder.py` and encodes the unitary 
+        # conditions into a sequence of vectors that can be concatenated to the text embedding and fed to the U-Net.
+        self.unitary_encoder = Unitary_encoder(**unitary_encoder_config) 
         self.params_config   = QC_Compilation_UNet_config(model_features, self.clr_dim, self.num_clrs, self.t_emb_size, self.cond_emb_size, num_heads, num_res_blocks, transformer_depths, self.unitary_encoder.params_config)
     
     def forward(self, x, t, c_emb, U, attn_mask=None, key_padding_mask=None, **kwargs):
-        u_emb = self.unitary_encoder(U)            # [batch, seq2, ch]     
+        # here actual encoding of the unitary conditions happens: the unitary conditions U are fed to the `Unitary_encoder` 
+        # and its output is concatenated to the text embedding c_emb before feeding it to the U-Net.
+        u_emb = self.unitary_encoder(U)            # [batch, seq2, ch]     # 
         c_emb = torch.cat([c_emb, u_emb], dim=1)   # [batch, seq1+seq2, ch]  
         out = super().forward(x, t, c_emb, attn_mask, key_padding_mask, **kwargs)
         return out
