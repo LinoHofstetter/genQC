@@ -185,7 +185,7 @@ class DiffusionPipeline(Pipeline):
             timesteps = (torch.ones((1)) * t).type(torch.int64).to(self.device, non_blocking=self.non_blocking)        
 
             #----------------------------------
-            #gen the fill in part
+            #gen the  fill in part
             latents, x0 = self.denoising_step(latents, timesteps, c_emb=c_emb, enable_guidance=enable_guidance, g=g) # resolved to overriden subclass method, e.g. `CompilationDiffusionPipeline.denoising_step()`, which applies the model and scheduler step for one denoising step, returning the denoised latents and the predicted original sample x0.
             
             #----------------------------------
@@ -229,8 +229,16 @@ class DiffusionPipeline(Pipeline):
         
     # @torch.no_grad()
     @torch.inference_mode()
-    def denoising(self, latents: torch.Tensor, c=None, negative_c=None, enable_guidance=True, g=7.5, t_start_index=0, no_bar=False, 
-                  return_predicted_x0=False, micro_cond=None, **kwargs):
+    def denoising(self, 
+                  latents: torch.Tensor, 
+                  c=None, negative_c=None, 
+                  enable_guidance=True, 
+                  g=7.5, 
+                  t_start_index=0, 
+                  no_bar=False, 
+                  return_predicted_x0=False, 
+                  micro_cond=None, 
+                  **kwargs):
         self.model.eval()
         self.text_encoder.eval()
         self.scheduler.to(self.device)
@@ -244,7 +252,13 @@ class DiffusionPipeline(Pipeline):
         for i, t in enumerate(tqdm(self.scheduler.timesteps[t_start_index:], disable=no_bar)):
             timesteps = torch.tensor([t], device=self.device)
             
-            latents, x0 = self.denoising_step(latents, timesteps, c_emb=c_emb, enable_guidance=enable_guidance, g=g, micro_cond=micro_cond, **kwargs)
+            latents, x0 = self.denoising_step(latents, 
+                                              timesteps, 
+                                              c_emb=c_emb, 
+                                              enable_guidance=enable_guidance, 
+                                              g=g, 
+                                              micro_cond=micro_cond, 
+                                              **kwargs)
 
             if return_predicted_x0: 
                 predicted_x0.append(x0)

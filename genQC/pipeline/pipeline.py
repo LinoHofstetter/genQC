@@ -249,7 +249,7 @@ class Pipeline(PipelineIO):
         run_cbs(self.cbs, "after_fit", self)
 
 
-    # Just helpers below        
+    # Just helpers below         
 
     #------------------------------------
     # builds and returns text summary string                   

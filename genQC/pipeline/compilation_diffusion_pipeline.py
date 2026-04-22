@@ -10,7 +10,7 @@ from ..imports import *
 from .diffusion_pipeline import DiffusionPipeline
 
 # %% ../../src/pipeline/compilation_diffusion_pipeline.ipynb #5307df45-9b01-4d0b-98ee-97bf23609001
-# Pipeline for genQC1 unitary compilation. Extends DiffusionPipeline class by adding a `Unitary_encoder` and 
+# Pipeline  for genQC1 unitary compilation. Extends DiffusionPipeline class by adding a `Unitary_encoder` and 
 # concatenating its output to the text embedding before feeding it to the U-Net.
 # Inherits init and train_step from DiffusionPipeline, but overrides the denoising process to account for the unitary conditions.
 class DiffusionPipeline_Compilation(DiffusionPipeline):   
