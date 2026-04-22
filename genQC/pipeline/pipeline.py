@@ -202,6 +202,7 @@ class Pipeline(PipelineIO):
                 # run_cbs(self.cbs, "after_batch", self) # e.g. if max-number of batches is needed
                 
     
+    # Outermost entrypoint for training. (but I think compile is called first to prepare everything).
     # fit is top-level training loop -> trains for multiple epochs.
 
     #run on train and one on valid
@@ -246,7 +247,10 @@ class Pipeline(PipelineIO):
                        
         self.fit_summary(log_summary=log_summary)
         run_cbs(self.cbs, "after_fit", self)
-                
+
+
+    # Just helpers below        
+
     #------------------------------------
     # builds and returns text summary string                   
     def summary(self): 
