@@ -1,5 +1,9 @@
 """Functions to create a quantum circuit dataset."""
 # UNDERSTOOD DETAILS HERE, left out some details in functions where it is clear what they do
+# This file contains functions to generate random quantum circuits and encode them into tensors for use in machine learning models. The main functions are:
+# - `get_rnd_encoded_circuit`: generates a single random circuit, encodes it
+# - `get_rnd_encoded_circuits`: generates multiple random circuits in a loop, with options for filtering unique circuits and returning parameters as tensors.
+# - `generate_circuit_dataset`: a large scale version intended for bigger compilation datasets, with memory mapping and parallelization.
 # ToDo: Find out if this creates dataset for training or evaluation? -> definitely for training, maybe also evaluation. 
 
 
@@ -20,7 +24,7 @@ from ..utils.async_fn import MemoryMappedArray, Parallel, delayed
 # %% ../../src/platform/circuits_generation.ipynb #297cefeb-ff48-4fdb-9df6-f02b43c518cb
 #from doc: enum.Enum is a way to define a set of named constant values, e.g. SRV = 1, UNITARY = 2, used to specify the type of condition for circuit generation. 
 class CircuitConditionType(enum.Enum):   
-    SRV      = enum.auto() 
+    SRV      = enum.auto()  
     UNITARY  = enum.auto() 
 
 # %% ../../src/platform/circuits_generation.ipynb #c3c07f63-1d6e-4c6f-8079-f78eadccb172
@@ -215,7 +219,7 @@ def generate_circuit_dataset(backend: BaseBackend,
                              min_sub_gate_pool_cnt: int = 1,
                              max_sub_gate_pool_cnt: Optional[int] = None,
                              fixed_sub_gate_pool: Optional[Sequence[str]] = None,
-                             max_num_params: Optional[int] = None,
+                             max_num_params: Optional[int] = None, # if not provided, will infer the max number of parameters from the generated circuits
                              filter_unique: bool = True,
                              optimized: bool = True,                                                         
                              post_randomize_params: bool = True,

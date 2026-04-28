@@ -1,10 +1,8 @@
 """Special extension to `DiffusionPipeline` for source-circuit equivalence conditioning."""
 
 
-# %% auto #0
 __all__ = ["DiffusionPipeline_Equivalence"]
 
-# %% ../../src/pipeline/equivalence_diffusion_pipeline.ipynb
 from ..imports import *
 from .diffusion_pipeline import DiffusionPipeline
 from ..scheduler.scheduler import Scheduler

@@ -12,9 +12,10 @@ from ..scheduler.scheduler import Scheduler
 from .pipeline import Pipeline
 from ..utils.config_loader import *
 from ..models.config_model import ConfigModel
+from ..models.frozen_open_clip import FrozenOpenCLIPEmbedder, CachedFrozenOpenCLIPEmbedder # added for from_config_file() modification
 
 # %% ../../src/pipeline/diffusion_pipeline.ipynb #36032308-bd0e-4409-9db0-9d89fc258e5a
-# DiffusionPipeline class extends the general `Pipeline` class and implements the specific functions for diffusion models, 
+# DiffusionPipeline class extends the general `Pipeline` class and implements the specific functions for diffusion models,  
 # such as the denoising process and classifier-free guidance. It also includes training functions specific to diffusion models, 
 # such as low variance sampling of timesteps and a training step that includes noise addition and prediction of noise.
 class DiffusionPipeline(Pipeline):   
@@ -90,6 +91,9 @@ class DiffusionPipeline(Pipeline):
         self.text_encoder.store_model(config_path=None, save_path=save_path+"text_encoder")
         self.embedder.store_model(config_path=None, save_path=save_path+"embedder")
     
+    # This function provides a convenient way to create a `DiffusionPipeline` instance from a configuration file. 
+    # It loads the configuration, processes the parameters for the scheduler, model, text encoder, and embedder, and then instantiates the pipeline 
+    # using the loaded configuration. This allows for easy creation of pipelines based on different configurations without having to manually set up each component.
     @staticmethod
     def from_config_file(config_path, device: torch.device, save_path: Optional[str] = None):    
         config = load_config(config_path+"config.yaml")   

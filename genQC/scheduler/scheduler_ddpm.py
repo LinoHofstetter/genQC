@@ -20,6 +20,10 @@ class DDPMSchedulerOutput:
 # Scheduler for genQC1 unitary compilation
 
 
+# This class implements the Denoising Diffusion Probabilistic Models (DDPM) scheduler, which is a type of generative model that learns to reverse a diffusion process. 
+# The scheduler defines the noise schedule and the denoising steps for both training and inference. It supports different beta schedules, prediction types, 
+# and input perturbation for training. The class also includes methods for adding noise to the original samples during training and for performing a 
+# denoising step during inference.
 class DDPMScheduler(Scheduler):
     """A `Scheduler` implementing [(DDPM)](https://arxiv.org/abs/2006.11239)"""
     

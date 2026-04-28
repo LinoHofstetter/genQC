@@ -16,6 +16,7 @@ __all__ = ['ConfigDatasetConfig', 'ConfigDataset']
 from ..imports import *
 from ..utils.config_loader import *
 from .dataset_helper import *
+from ..utils.misc_utils import DataLoaders # needed to add this import to run dm1_ucomp_newdata_scratch.py 
 
 from huggingface_hub import snapshot_download
 
@@ -69,6 +70,9 @@ class ConfigDataset():
   
         return self
 
+    # This function provides a summary of the memory usage of the dataset, including the type, memory usage, device, and shape of each stored item. 
+    # It calculates the memory usage based on the data type and shape of tensors, and it also handles lists of tensors and numpy arrays. 
+    # The total memory usage is also printed at the end.
     def memory_summary(self) -> None:
         print("##################### Dataset memory summary #####################")
         print("Name          || Type                       || Memory     || Device  || Shape")
@@ -176,6 +180,9 @@ class ConfigDataset():
                
         return x, x_valid, y, y_valid, (z, z_valid)
     
+    # This function is responsible for generating the dataloaders for training and validation. It first preprocesses the data using the `x_y_preprocess` method, 
+    # then splits the data into training and validation sets using the `valid_split` method. After that, it creates `TensorDataset` objects for both training 
+    # and validation sets and finally creates `DataLoader` objects for each set. The function also handles moving the data to GPU if specified in the configuration.
     def get_dataloaders(self, batch_size, p_valid=0.1, balance_max=None, max_samples=None, y_on_cpu=False, shuffle=True):
         #-------------------------
         # valid split and to device
@@ -303,6 +310,9 @@ class ConfigDataset():
         
         return config_dataset
     
+    # This function provides a convenient way to load a dataset from a configuration file. It checks if the class method is called from the `ConfigDataset` class 
+    # or a subclass, and adjusts the target in the config accordingly. It then calls the `from_config` method to instantiate the dataset and load the data from 
+    # the specified path. This allows for flexible loading of datasets based on different configurations and classes.
     @classmethod
     def from_config_file(cls, config_path, device: torch.device, save_path:  Optional[str] = None, make_contiguous: bool = True):
         """
